@@ -7,28 +7,30 @@ import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/components/ui/use-toast";
 import { Award, Clock, SkipForward, CheckCircle2 } from "lucide-react";
 
+interface Task {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  difficulty: number;
+  points: number;
+  user_task_id?: string;
+  status?: string;
+}
+
 interface TaskCardProps {
+  task: Task;
   onComplete: (points: number) => void;
-  onSkip: () => void;
+  onSkip?: () => void;
 }
 
 const TIMER_DURATION = 300; // 5 minutes in seconds
 
-const TaskCard = ({ onComplete, onSkip }: TaskCardProps) => {
+const TaskCard = ({ task, onComplete, onSkip }: TaskCardProps) => {
   const [timeRemaining, setTimeRemaining] = useState(TIMER_DURATION);
   const [isActive, setIsActive] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
   const { toast } = useToast();
-  
-  // Sample task data - in real app would come from API/database
-  const task = {
-    id: 1,
-    title: "Speak Up in Your Next Meeting",
-    description: "In your next meeting or conversation, challenge yourself to share at least one idea or opinion. It doesn't need to be perfect - the goal is simply to participate.",
-    category: "Public Speaking",
-    difficulty: "Medium",
-    points: 20,
-  };
   
   useEffect(() => {
     let interval: number | undefined;
@@ -77,7 +79,9 @@ const TaskCard = ({ onComplete, onSkip }: TaskCardProps) => {
   
   const handleSkipTask = () => {
     setIsActive(false);
-    onSkip();
+    if (onSkip) {
+      onSkip();
+    }
     toast({
       title: "Task skipped",
       description: "You can try a different task tomorrow.",
