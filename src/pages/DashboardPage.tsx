@@ -7,6 +7,7 @@ import PointsDisplay from "@/components/dashboard/PointsDisplay";
 import MotivationalTip from "@/components/dashboard/MotivationalTip";
 import { supabase } from "@/integrations/supabase/client";
 import NotificationService from "@/services/NotificationService";
+import { getTasksForUser, TaskData } from "@/data/tasksByProfession";
 
 interface Task {
   id: string;
@@ -28,6 +29,7 @@ const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [points, setPoints] = useState(0);
   const [streak, setStreak] = useState(0);
+  const [userProfession, setUserProfession] = useState("other");
   const navigate = useNavigate();
   
   useEffect(() => {
@@ -43,7 +45,7 @@ const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
         // Fetch user profile
         const { data: profileData } = await supabase
           .from('profiles')
-          .select('points, streak, onboarding_completed')
+          .select('points, streak, onboarding_completed, full_name')
           .eq('id', session.user.id)
           .single();
         
@@ -56,6 +58,17 @@ const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
             navigate("/onboarding");
             return;
           }
+        }
+
+        // Get user preferences including profession
+        const { data: prefData } = await supabase
+          .from('user_preferences')
+          .select('occupation')
+          .eq('user_id', session.user.id)
+          .single();
+        
+        if (prefData?.occupation) {
+          setUserProfession(prefData.occupation);
         }
         
         // Fetch tasks assigned to user
@@ -87,37 +100,46 @@ const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
           
           setTasks(formattedTasks);
         } else {
-          // If no tasks are assigned, fetch random tasks
-          const { data: randomTasks } = await supabase
-            .from('tasks')
-            .select('*')
-            .limit(5);
+          // If no tasks are assigned, fetch appropriate tasks based on profession
+          const appropriateTasks = getTasksForUser(prefData?.occupation || 'other');
+          const randomTasks = appropriateTasks
+            .sort(() => Math.random() - 0.5)
+            .slice(0, 5);
           
-          if (randomTasks) {
-            setTasks(randomTasks);
-            
-            // Assign these tasks to the user
-            const tasksToAssign = randomTasks.map((task) => ({
-              user_id: session.user.id,
-              task_id: task.id,
+          // Convert to Task format
+          const tasksToAssign = randomTasks.map(task => ({
+            id: task.id,
+            title: task.title,
+            description: task.description,
+            category: task.category,
+            difficulty: task.difficulty,
+            points: task.points
+          }));
+          
+          // Create user_tasks records
+          const userTasksToInsert = tasksToAssign.map(task => ({
+            user_id: session.user.id,
+            task_id: task.id,
+            status: 'assigned'
+          }));
+          
+          const { data: newUserTasks } = await supabase
+            .from('user_tasks')
+            .insert(userTasksToInsert)
+            .select();
+          
+          if (newUserTasks) {
+            // Update task display with user_task_id
+            const updatedTasks = tasksToAssign.map((task, index) => ({
+              ...task,
+              user_task_id: newUserTasks[index]?.id,
               status: 'assigned'
             }));
             
-            const { data: newUserTasks } = await supabase
-              .from('user_tasks')
-              .insert(tasksToAssign)
-              .select();
-            
-            if (newUserTasks) {
-              // Update task display with user_task_id
-              const updatedTasks = randomTasks.map((task, index) => ({
-                ...task,
-                user_task_id: newUserTasks[index]?.id,
-                status: 'assigned'
-              }));
-              
-              setTasks(updatedTasks);
-            }
+            setTasks(updatedTasks);
+          } else {
+            // Fallback if insertion fails
+            setTasks(tasksToAssign);
           }
         }
         
@@ -175,21 +197,29 @@ const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
       // Update the local task list
       setTasks(tasks.filter(task => task.id !== taskId));
       
-      // Fetch a new task to replace the completed one
-      const { data: newTaskData } = await supabase
-        .from('tasks')
-        .select('*')
-        .not('id', 'in', `(${tasks.map(t => t.id).join(',')})`)
-        .limit(1)
+      // Get user preferences for appropriate new task
+      const { data: prefData } = await supabase
+        .from('user_preferences')
+        .select('occupation')
+        .eq('user_id', session.user.id)
         .single();
       
-      if (newTaskData) {
+      // Get appropriate tasks based on profession
+      const appropriateTasks = getTasksForUser(prefData?.occupation || userProfession);
+      const currentTaskIds = tasks.map(t => t.id);
+      const availableTasks = appropriateTasks.filter(t => !currentTaskIds.includes(t.id));
+      
+      // Select a random new task
+      if (availableTasks.length > 0) {
+        const randomIndex = Math.floor(Math.random() * availableTasks.length);
+        const newTask = availableTasks[randomIndex];
+        
         // Assign the new task to the user
         const { data: newUserTask } = await supabase
           .from('user_tasks')
           .insert({
             user_id: session.user.id,
-            task_id: newTaskData.id,
+            task_id: newTask.id,
             status: 'assigned'
           })
           .select()
@@ -198,7 +228,12 @@ const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
         if (newUserTask) {
           // Add the new task to the list
           setTasks([...tasks.filter(task => task.id !== taskId), {
-            ...newTaskData,
+            id: newTask.id,
+            title: newTask.title,
+            description: newTask.description,
+            category: newTask.category,
+            difficulty: newTask.difficulty,
+            points: newTask.points,
             user_task_id: newUserTask.id,
             status: 'assigned'
           }]);
@@ -221,7 +256,7 @@ const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
   
   return (
     <AppLayout>
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-4xl mx-auto pb-16">
         <h1 className="text-2xl font-bold text-confidence-900 mb-2">
           Welcome, {userName || "Confidence Builder"}
         </h1>
@@ -245,7 +280,7 @@ const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
               <TaskCard
                 key={task.id}
                 task={task}
-                onComplete={() => handleTaskComplete(task.id, task.user_task_id || '', task.points)}
+                onComplete={(earnedPoints) => handleTaskComplete(task.id, task.user_task_id || '', earnedPoints)}
               />
             ))
           )}

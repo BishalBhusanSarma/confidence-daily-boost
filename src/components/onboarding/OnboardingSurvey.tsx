@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { useToast } from "@/components/ui/use-toast";
 import { ArrowRight, Check, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { tasksByProfession } from "@/data/tasksByProfession";
 
 interface SurveyQuestion {
   id: number;
@@ -22,8 +23,13 @@ const allSurveyQuestions: SurveyQuestion[] = [
   { id: 6, question: "Do you experience work-related stress that affects your confidence?", forRoles: ["professional", "freelancer"] },
   { id: 7, question: "Do you find it difficult to maintain work-life balance?", forRoles: ["professional", "freelancer"] },
   { id: 8, question: "Do you worry about exams or academic performance?", forRoles: ["student"] },
-  { id: 9, question: "Do you feel comfortable participating in class discussions?", forRoles: ["student"] },
+  { id: 9, question: "Do you feel uncomfortable participating in class discussions?", forRoles: ["student"] },
   { id: 10, question: "Do you feel pressure from academic expectations?", forRoles: ["student"] },
+  { id: 11, question: "Do you experience social anxiety in academic settings?", forRoles: ["student"] },
+  { id: 12, question: "Do you find it challenging to present your work to colleagues?", forRoles: ["professional"] },
+  { id: 13, question: "Does negotiating prices/contracts make you anxious?", forRoles: ["freelancer"] },
+  { id: 14, question: "Do you struggle with imposter syndrome?", forRoles: ["professional", "freelancer"] },
+  { id: 15, question: "Do you find it difficult to ask for help or clarification?", forRoles: ["all"] },
 ];
 
 const OnboardingSurvey = () => {
@@ -32,6 +38,7 @@ const OnboardingSurvey = () => {
   const [isCompleted, setIsCompleted] = useState(false);
   const [surveyQuestions, setSurveyQuestions] = useState<SurveyQuestion[]>([]);
   const [userName, setUserName] = useState("");
+  const [userOccupation, setUserOccupation] = useState("");
   const [loading, setLoading] = useState(true);
   
   const navigate = useNavigate();
@@ -66,6 +73,7 @@ const OnboardingSurvey = () => {
           .single();
         
         const occupation = prefData?.occupation || "other";
+        setUserOccupation(occupation);
         
         // Filter questions based on occupation
         const filteredQuestions = allSurveyQuestions.filter(q => 
@@ -114,7 +122,7 @@ const OnboardingSurvey = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) return;
       
-      // Generate initial tasks based on survey answers
+      // Generate initial tasks based on survey answers and occupation
       const confidenceAreas = [];
       Object.entries(finalAnswers).forEach(([questionId, answer]) => {
         if (answer) {
@@ -129,6 +137,11 @@ const OnboardingSurvey = () => {
           if (question?.id === 8) confidenceAreas.push("academic performance");
           if (question?.id === 9) confidenceAreas.push("class participation");
           if (question?.id === 10) confidenceAreas.push("academic pressure");
+          if (question?.id === 11) confidenceAreas.push("social anxiety");
+          if (question?.id === 12) confidenceAreas.push("presentation skills");
+          if (question?.id === 13) confidenceAreas.push("negotiation");
+          if (question?.id === 14) confidenceAreas.push("imposter syndrome");
+          if (question?.id === 15) confidenceAreas.push("asking for help");
         }
       });
       
@@ -138,14 +151,20 @@ const OnboardingSurvey = () => {
         .update({ onboarding_completed: true })
         .eq('id', session.user.id);
       
-      // Assign initial tasks to the user
-      const { data: tasksData } = await supabase
-        .from('tasks')
-        .select('id, points')
-        .limit(5);
+      // Get appropriate tasks based on occupation
+      const appropriateTasks = tasksByProfession.filter(task => 
+        task.forProfessions.includes(userOccupation) || 
+        task.forProfessions.includes('all')
+      );
       
-      if (tasksData && tasksData.length > 0) {
-        const userTasks = tasksData.map(task => ({
+      // Randomly select 5 tasks
+      const selectedTasks = appropriateTasks
+        .sort(() => Math.random() - 0.5)
+        .slice(0, 5);
+      
+      // Assign initial tasks to the user
+      if (selectedTasks.length > 0) {
+        const userTasks = selectedTasks.map(task => ({
           user_id: session.user.id,
           task_id: task.id,
           status: 'assigned'
