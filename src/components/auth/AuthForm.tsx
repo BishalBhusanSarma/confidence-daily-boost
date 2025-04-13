@@ -5,15 +5,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
-import { LockKeyhole, Mail, User } from "lucide-react";
+import { LockKeyhole, Mail, User, Briefcase } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { supabase } from "@/integrations/supabase/client";
 
-type AuthMode = "login" | "register";
+type AuthMode = "register" | "login";
+type Occupation = "student" | "professional" | "freelancer" | "other";
 
 export const AuthForm = () => {
-  const [mode, setMode] = useState<AuthMode>("login");
+  const [mode, setMode] = useState<AuthMode>("register");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [occupation, setOccupation] = useState<Occupation | "">("");
   const [isLoading, setIsLoading] = useState(false);
   
   const navigate = useNavigate();
@@ -24,6 +29,7 @@ export const AuthForm = () => {
     setEmail("");
     setPassword("");
     setName("");
+    setOccupation("");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -31,31 +37,72 @@ export const AuthForm = () => {
     setIsLoading(true);
 
     try {
-      // This is a mock authentication - in a real app, we would use Supabase here
       if (mode === "register") {
-        // Registration logic would go here
-        localStorage.setItem("user", JSON.stringify({ email, name }));
-        localStorage.setItem("isAuthenticated", "true");
-        toast({
-          title: "Account created!",
-          description: "Welcome to Confidence Boost",
+        // Register with Supabase
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              full_name: name,
+              occupation
+            }
+          }
         });
-        navigate("/onboarding");
+
+        if (error) throw error;
+
+        if (data?.user) {
+          // Insert occupation into user_preferences
+          if (occupation) {
+            const { error: prefError } = await supabase
+              .from('user_preferences')
+              .insert([{ user_id: data.user.id, occupation }]);
+            
+            if (prefError) console.error("Error saving preferences:", prefError);
+          }
+
+          toast({
+            title: "Account created!",
+            description: "Welcome to Confidence Boost",
+          });
+          navigate("/onboarding");
+        }
       } else {
-        // Login logic would go here
-        localStorage.setItem("isAuthenticated", "true");
-        localStorage.setItem("user", JSON.stringify({ email }));
-        toast({
-          title: "Welcome back!",
-          description: "Successfully logged in",
+        // Login with Supabase
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password
         });
-        navigate("/dashboard");
+
+        if (error) throw error;
+
+        // Check if onboarding is completed
+        if (data?.user) {
+          const { data: profileData } = await supabase
+            .from('profiles')
+            .select('onboarding_completed')
+            .eq('id', data.user.id)
+            .single();
+
+          toast({
+            title: "Welcome back!",
+            description: "Successfully logged in",
+          });
+
+          if (profileData?.onboarding_completed) {
+            navigate("/dashboard");
+          } else {
+            navigate("/onboarding");
+          }
+        }
       }
-    } catch (error) {
+    } catch (error: any) {
+      console.error("Auth error:", error);
       toast({
         variant: "destructive",
         title: "Authentication failed",
-        description: "Please check your credentials and try again",
+        description: error.message || "Please check your credentials and try again",
       });
     } finally {
       setIsLoading(false);
@@ -118,6 +165,30 @@ export const AuthForm = () => {
               />
             </div>
           </div>
+
+          {mode === "register" && (
+            <div className="space-y-2">
+              <Label htmlFor="occupation">Your Occupation</Label>
+              <div className="relative">
+                <Briefcase className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Select 
+                  value={occupation} 
+                  onValueChange={(value) => setOccupation(value as Occupation)}
+                  required
+                >
+                  <SelectTrigger className="pl-10">
+                    <SelectValue placeholder="Select your occupation" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="student">Student</SelectItem>
+                    <SelectItem value="professional">Working Professional</SelectItem>
+                    <SelectItem value="freelancer">Freelancer</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
         </CardContent>
         
         <CardFooter className="flex flex-col space-y-4">
