@@ -10,13 +10,18 @@ const SplashScreen = ({ onComplete }: SplashScreenProps) => {
   const [isAnimating, setIsAnimating] = useState(true);
 
   useEffect(() => {
+    // Start a timer to control the splash screen duration
     const timer = setTimeout(() => {
+      // Start fade-out animation
       setIsAnimating(false);
+      
+      // Call onComplete after fade-out animation finishes
       setTimeout(() => {
         onComplete();
       }, 500); // Wait for fade-out animation to complete
     }, 2000); // Show splash for exactly 2 seconds
 
+    // Clean up timer if component unmounts
     return () => clearTimeout(timer);
   }, [onComplete]);
 

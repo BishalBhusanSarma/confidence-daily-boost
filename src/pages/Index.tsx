@@ -3,11 +3,13 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2 } from "lucide-react";
+import SplashScreen from "@/components/SplashScreen";
 
 const Index = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showSplash, setShowSplash] = useState(true);
   
   useEffect(() => {
     const checkAuthAndNavigate = async () => {
@@ -50,20 +52,27 @@ const Index = () => {
       }
     };
     
-    // Add a timeout to prevent infinite loading if supabase is slow to respond
-    const timeoutId = setTimeout(() => {
-      if (loading) {
-        setLoading(false);
-        setError("Connection timed out. Please try refreshing the page.");
-        navigate("/");
-      }
-    }, 8000); // 8 second timeout
-    
-    checkAuthAndNavigate();
-    
-    // Clear timeout on component unmount
-    return () => clearTimeout(timeoutId);
-  }, [navigate]);
+    // Hide splash screen after 2 seconds, then check auth
+    if (!showSplash) {
+      // Add a timeout to prevent infinite loading if supabase is slow to respond
+      const timeoutId = setTimeout(() => {
+        if (loading) {
+          setLoading(false);
+          setError("Connection timed out. Please try refreshing the page.");
+          navigate("/");
+        }
+      }, 8000); // 8 second timeout
+      
+      checkAuthAndNavigate();
+      
+      // Clear timeout on component unmount
+      return () => clearTimeout(timeoutId);
+    }
+  }, [navigate, showSplash, loading]);
+  
+  if (showSplash) {
+    return <SplashScreen onComplete={() => setShowSplash(false)} />;
+  }
   
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-confidence-50 to-white">
