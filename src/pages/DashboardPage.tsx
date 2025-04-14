@@ -1,6 +1,6 @@
 
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import AppLayout from "@/components/layout/AppLayout";
 import TaskCard from "@/components/dashboard/TaskCard";
 import PointsDisplay from "@/components/dashboard/PointsDisplay";
@@ -8,6 +8,8 @@ import MotivationalTip from "@/components/dashboard/MotivationalTip";
 import { supabase } from "@/integrations/supabase/client";
 import NotificationService from "@/services/NotificationService";
 import { getTasksForUser, TaskData } from "@/data/tasksByProfession";
+import { Button } from "@/components/ui/button";
+import { Settings, Award } from "lucide-react";
 
 interface Task {
   id: string;
@@ -256,10 +258,31 @@ const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
   
   return (
     <AppLayout>
-      <div className="max-w-4xl mx-auto pb-16">
-        <h1 className="text-2xl font-bold text-confidence-900 mb-2">
-          Welcome, {userName || "Confidence Builder"}
-        </h1>
+      <div className="max-w-4xl mx-auto pb-24 md:pb-16">
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-bold text-confidence-900">
+            Welcome, {userName || "Confidence Builder"}
+          </h1>
+          <div className="hidden md:flex space-x-2">
+            <Button 
+              variant="outline" 
+              className="flex items-center gap-2"
+              onClick={() => navigate("/leaderboard")}
+            >
+              <Award className="h-4 w-4" />
+              <span>Leaderboard</span>
+            </Button>
+            <Button 
+              variant="outline" 
+              className="flex items-center gap-2"
+              onClick={() => navigate("/settings")}
+            >
+              <Settings className="h-4 w-4" />
+              <span>Settings</span>
+            </Button>
+          </div>
+        </div>
+        
         <p className="text-confidence-700 mb-6">Here are your confidence tasks for today</p>
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -280,7 +303,7 @@ const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
               <TaskCard
                 key={task.id}
                 task={task}
-                onComplete={(earnedPoints) => handleTaskComplete(task.id, task.user_task_id || '', earnedPoints)}
+                onComplete={() => handleTaskComplete(task.id, task.user_task_id || '', task.points)}
               />
             ))
           )}

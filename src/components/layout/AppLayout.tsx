@@ -91,7 +91,7 @@ const AppLayout = ({ children }: AppLayoutProps) => {
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       {/* Header */}
-      <header className="bg-white shadow-sm border-b border-gray-200">
+      <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-20">
         <div className="container mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center">
             <Award className="h-6 w-6 text-confidence-600 mr-2" />
@@ -160,7 +160,7 @@ const AppLayout = ({ children }: AppLayoutProps) => {
       </header>
       
       {/* Main content */}
-      <main className="flex-1 container mx-auto px-4 py-6">
+      <main className="flex-1 container mx-auto px-4 py-6 overflow-y-auto pb-16 md:pb-0">
         {children}
       </main>
       
