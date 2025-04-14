@@ -15,7 +15,7 @@ const SplashScreen = ({ onComplete }: SplashScreenProps) => {
       setTimeout(() => {
         onComplete();
       }, 500); // Wait for fade-out animation to complete
-    }, 2000); // Show splash for 2 seconds
+    }, 2000); // Show splash for exactly 2 seconds
 
     return () => clearTimeout(timer);
   }, [onComplete]);
