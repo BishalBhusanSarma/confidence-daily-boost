@@ -1,27 +1,15 @@
+
 import { useEffect, useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import AppLayout from "@/components/layout/AppLayout";
-import TaskCard from "@/components/dashboard/TaskCard";
+import DashboardHeader from "@/components/dashboard/DashboardHeader";
+import TaskList from "@/components/dashboard/TaskList";
 import PointsDisplay from "@/components/dashboard/PointsDisplay";
 import MotivationalTip from "@/components/dashboard/MotivationalTip";
 import { supabase } from "@/integrations/supabase/client";
 import NotificationService from "@/services/NotificationService";
-import { getTasksForUser } from "@/data/tasksByProfession";
-import { Button } from "@/components/ui/button";
-import { Settings, Award } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
-import { v4 as uuidv4 } from 'uuid';
-
-interface Task {
-  id: string;
-  title: string;
-  description: string;
-  category: string;
-  difficulty: number;
-  points: number;
-  user_task_id?: string;
-  status?: string;
-}
+import { useDashboardTasks } from "@/hooks/useDashboardTasks";
 
 interface DashboardPageProps {
   userName?: string;
@@ -29,13 +17,14 @@ interface DashboardPageProps {
 
 const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
   const [isLoading, setIsLoading] = useState(true);
-  const [tasks, setTasks] = useState<Task[]>([]);
   const [points, setPoints] = useState(0);
   const [streak, setStreak] = useState(0);
   const [userProfession, setUserProfession] = useState("other");
   const [userId, setUserId] = useState<string | null>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
+  
+  const { tasks, fetchTasks, completeTask } = useDashboardTasks(userId, userProfession);
   
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -49,10 +38,9 @@ const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
         
         setUserId(session.user.id);
         
-        // Fetch user profile
         const { data: profileData } = await supabase
           .from('profiles')
-          .select('points, streak, onboarding_completed, full_name')
+          .select('points, streak, onboarding_completed')
           .eq('id', session.user.id)
           .single();
         
@@ -60,14 +48,12 @@ const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
           setPoints(profileData.points || 0);
           setStreak(profileData.streak || 0);
           
-          // Redirect to onboarding if not completed
           if (!profileData.onboarding_completed) {
             navigate("/onboarding");
             return;
           }
         }
 
-        // Get user preferences including profession
         const { data: prefData } = await supabase
           .from('user_preferences')
           .select('occupation')
@@ -78,114 +64,8 @@ const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
           setUserProfession(prefData.occupation);
         }
         
-        // Fetch tasks assigned to user
-        const { data: userTasks } = await supabase
-          .from('user_tasks')
-          .select(`
-            id,
-            status,
-            task_id,
-            tasks (
-              id, title, description, category, difficulty, points
-            )
-          `)
-          .eq('user_id', session.user.id)
-          .eq('status', 'assigned')
-          .limit(5);
+        await fetchTasks();
         
-        if (userTasks && userTasks.length > 0) {
-          const formattedTasks = userTasks.map((ut: any) => ({
-            id: ut.tasks.id,
-            title: ut.tasks.title,
-            description: ut.tasks.description,
-            category: ut.tasks.category,
-            difficulty: ut.tasks.difficulty,
-            points: ut.tasks.points,
-            user_task_id: ut.id,
-            status: ut.status
-          }));
-          
-          setTasks(formattedTasks);
-        } else {
-          // If no tasks are assigned, fetch appropriate tasks based on profession
-          const appropriateTasks = getTasksForUser(prefData?.occupation || 'other');
-          const randomTasks = appropriateTasks
-            .sort(() => Math.random() - 0.5)
-            .slice(0, 5);
-          
-          // Convert task IDs to UUIDs before inserting
-          const tasksToAssign = randomTasks.map(task => {
-            // Generate a UUID for each task instead of using string IDs
-            const taskUuid = uuidv4();
-            return {
-              ...task,
-              id: taskUuid  // Replace string ID with UUID
-            };
-          });
-          
-          // First create tasks entries with UUIDs
-          const { data: newTasks, error: taskError } = await supabase
-            .from('tasks')
-            .insert(tasksToAssign.map(task => ({
-              id: task.id,
-              title: task.title,
-              description: task.description,
-              category: task.category,
-              difficulty: task.difficulty,
-              points: task.points
-            })))
-            .select();
-          
-          if (taskError) {
-            console.error("Error creating tasks:", taskError);
-            toast({
-              variant: "destructive",
-              title: "Failed to load tasks",
-              description: "There was an error creating your tasks.",
-            });
-            setIsLoading(false);
-            return;
-          }
-          
-          // Then create user_tasks records with the new task UUIDs
-          if (newTasks) {
-            const userTasksToInsert = newTasks.map(task => ({
-              user_id: session.user.id,
-              task_id: task.id,
-              status: 'assigned'
-            }));
-            
-            const { data: newUserTasks, error } = await supabase
-              .from('user_tasks')
-              .insert(userTasksToInsert)
-              .select();
-            
-            if (newUserTasks) {
-              // Update task display with user_task_id
-              const updatedTasks = newTasks.map((task, index) => ({
-                id: task.id,
-                title: task.title,
-                description: task.description,
-                category: task.category,
-                difficulty: task.difficulty,
-                points: task.points,
-                user_task_id: newUserTasks[index]?.id,
-                status: 'assigned'
-              }));
-              
-              setTasks(updatedTasks);
-            } else if (error) {
-              console.error("Error inserting tasks:", error);
-              toast({
-                variant: "destructive",
-                title: "Failed to load tasks",
-                description: "There was an error loading your tasks. Please try again.",
-              });
-            }
-          }
-        }
-        
-        // Initialize notification service
         const notificationService = NotificationService.getInstance();
         notificationService.scheduleNotifications();
         
@@ -202,144 +82,13 @@ const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
     };
     
     fetchDashboardData();
-  }, [navigate, toast]);
-  
+  }, [navigate, toast, fetchTasks]);
+
   const handleTaskComplete = async (taskId: string, userTaskId: string, points: number) => {
-    try {
-      if (!userId) {
-        toast({
-          variant: "destructive",
-          title: "Authentication error",
-          description: "Please login again to complete tasks.",
-        });
-        return;
-      }
-      
-      // Update the task status
-      await supabase
-        .from('user_tasks')
-        .update({
-          status: 'completed',
-          completed_at: new Date().toISOString(),
-          points_earned: points
-        })
-        .eq('id', userTaskId)
-        .eq('user_id', userId); // Ensure we're only updating the current user's task
-      
-      // Update the user's points
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('points, streak')
-        .eq('id', userId)
-        .single();
-      
-      if (profileData) {
-        const currentPoints = profileData.points || 0;
-        const currentStreak = profileData.streak || 0;
-        const newPoints = currentPoints + points;
-        const newStreak = currentStreak + 1;
-        
-        await supabase
-          .from('profiles')
-          .update({
-            points: newPoints,
-            streak: newStreak
-          })
-          .eq('id', userId);
-        
-        setPoints(newPoints);
-        setStreak(newStreak);
-        
-        toast({
-          title: "Task completed!",
-          description: `You earned ${points} points. Your new total is ${newPoints}.`,
-        });
-      }
-      
-      // Update the local task list
-      setTasks(tasks.filter(task => task.id !== taskId));
-      
-      // Get user preferences for appropriate new task
-      const { data: prefData } = await supabase
-        .from('user_preferences')
-        .select('occupation')
-        .eq('user_id', userId)
-        .single();
-      
-      // Get appropriate tasks based on profession
-      const appropriateTasks = getTasksForUser(prefData?.occupation || userProfession);
-      const currentTaskIds = tasks.map(t => t.id);
-      const availableTasks = appropriateTasks.filter(t => !currentTaskIds.includes(t.id));
-      
-      // Select a random new task and generate UUID for it
-      if (availableTasks.length > 0) {
-        const randomIndex = Math.floor(Math.random() * availableTasks.length);
-        const newTaskTemplate = availableTasks[randomIndex];
-        
-        // Create new task with UUID
-        const newTaskUuid = uuidv4();
-        const newTask = {
-          ...newTaskTemplate,
-          id: newTaskUuid
-        };
-        
-        // First create the task
-        const { data: createdTask, error: taskError } = await supabase
-          .from('tasks')
-          .insert({
-            id: newTask.id,
-            title: newTask.title,
-            description: newTask.description,
-            category: newTask.category,
-            difficulty: newTask.difficulty,
-            points: newTask.points
-          })
-          .select()
-          .single();
-          
-        if (taskError) {
-          console.error("Error creating replacement task:", taskError);
-          return;
-        }
-        
-        // Assign the new task to the user
-        const { data: newUserTask, error } = await supabase
-          .from('user_tasks')
-          .insert({
-            user_id: userId,
-            task_id: createdTask.id,
-            status: 'assigned'
-          })
-          .select()
-          .single();
-        
-        if (error) {
-          console.error("Error assigning replacement task:", error);
-          return;
-        }
-        
-        if (newUserTask) {
-          // Add the new task to the list
-          setTasks([...tasks.filter(task => task.id !== taskId), {
-            id: createdTask.id,
-            title: createdTask.title,
-            description: createdTask.description,
-            category: createdTask.category,
-            difficulty: createdTask.difficulty,
-            points: createdTask.points,
-            user_task_id: newUserTask.id,
-            status: 'assigned'
-          }]);
-        }
-      }
-    } catch (error) {
-      console.error("Error completing task:", error);
-      toast({
-        variant: "destructive",
-        title: "Error completing task",
-        description: "Please try again.",
-      });
-    }
+    await completeTask(taskId, userTaskId, points);
+    // Update local state after task completion
+    setPoints(prevPoints => prevPoints + points);
+    setStreak(prevStreak => prevStreak + 1);
   };
   
   if (isLoading) {
@@ -355,29 +104,7 @@ const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
   return (
     <AppLayout>
       <div className="max-w-4xl mx-auto pb-24 md:pb-16">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold text-confidence-900">
-            Welcome, {userName || "Confidence Builder"}
-          </h1>
-          <div className="hidden md:flex space-x-2">
-            <Button 
-              variant="outline" 
-              className="flex items-center gap-2"
-              onClick={() => navigate("/leaderboard")}
-            >
-              <Award className="h-4 w-4" />
-              <span>Leaderboard</span>
-            </Button>
-            <Button 
-              variant="outline" 
-              className="flex items-center gap-2"
-              onClick={() => navigate("/settings")}
-            >
-              <Settings className="h-4 w-4" />
-              <span>Settings</span>
-            </Button>
-          </div>
-        </div>
+        <DashboardHeader userName={userName} />
         
         <p className="text-confidence-700 mb-6">Here are your confidence tasks for today</p>
         
@@ -389,21 +116,7 @@ const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
         </div>
         
         <h2 className="text-xl font-semibold text-confidence-800 mb-4">Your Tasks</h2>
-        <div className="grid grid-cols-1 gap-4">
-          {tasks.length === 0 ? (
-            <div className="bg-confidence-50 rounded-lg p-6 text-center">
-              <p className="text-confidence-700">No tasks available right now. Check back later!</p>
-            </div>
-          ) : (
-            tasks.map((task) => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                onComplete={() => handleTaskComplete(task.id, task.user_task_id || '', task.points)}
-              />
-            ))
-          )}
-        </div>
+        <TaskList tasks={tasks} onCompleteTask={handleTaskComplete} />
       </div>
     </AppLayout>
   );
