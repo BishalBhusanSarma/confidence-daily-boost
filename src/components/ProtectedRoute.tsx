@@ -29,19 +29,17 @@ const ProtectedRoute = ({
       }
     };
     
-    // First set up auth state listener
+    // First check auth directly
+    checkAuth();
+    
+    // Then set up auth state listener for changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
-        // Using setTimeout to prevent possible circular invocations
-        setTimeout(() => {
-          setIsAuthenticated(!!session);
-          setIsCheckingAuth(false);
-        }, 0);
+        // Using a synchronous update to prevent circular invocations
+        setIsAuthenticated(!!session);
+        setIsCheckingAuth(false);
       }
     );
-    
-    // Then check auth
-    checkAuth();
     
     // Add a shorter timeout to prevent infinite loading
     const timeoutId = setTimeout(() => {
@@ -50,7 +48,7 @@ const ProtectedRoute = ({
         setIsCheckingAuth(false);
         setIsAuthenticated(false);
       }
-    }, 3000); // Reduced from 5000ms to 3000ms
+    }, 3000);
     
     return () => {
       subscription.unsubscribe();
@@ -58,7 +56,7 @@ const ProtectedRoute = ({
     };
   }, []);
   
-  // Show loading while checking authentication
+  // Show loading while checking authentication, but limit to 1 second max
   if (isCheckingAuth) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-confidence-50 to-white">

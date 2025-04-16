@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import AppLayout from "@/components/layout/AppLayout";
@@ -11,6 +10,7 @@ import { getTasksForUser } from "@/data/tasksByProfession";
 import { Button } from "@/components/ui/button";
 import { Settings, Award } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
+import { v4 as uuidv4 } from 'uuid';
 
 interface Task {
   id: string;
@@ -113,47 +113,75 @@ const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
             .sort(() => Math.random() - 0.5)
             .slice(0, 5);
           
-          // Convert to Task format
-          const tasksToAssign = randomTasks.map(task => ({
-            id: task.id,
-            title: task.title,
-            description: task.description,
-            category: task.category,
-            difficulty: task.difficulty,
-            points: task.points
-          }));
+          // Convert task IDs to UUIDs before inserting
+          const tasksToAssign = randomTasks.map(task => {
+            // Generate a UUID for each task instead of using string IDs
+            const taskUuid = uuidv4();
+            return {
+              ...task,
+              id: taskUuid  // Replace string ID with UUID
+            };
+          });
           
-          // Create user_tasks records
-          const userTasksToInsert = tasksToAssign.map(task => ({
-            user_id: session.user.id,
-            task_id: task.id,
-            status: 'assigned'
-          }));
-          
-          const { data: newUserTasks, error } = await supabase
-            .from('user_tasks')
-            .insert(userTasksToInsert)
+          // First create tasks entries with UUIDs
+          const { data: newTasks, error: taskError } = await supabase
+            .from('tasks')
+            .insert(tasksToAssign.map(task => ({
+              id: task.id,
+              title: task.title,
+              description: task.description,
+              category: task.category,
+              difficulty: task.difficulty,
+              points: task.points
+            })))
             .select();
           
-          if (newUserTasks) {
-            // Update task display with user_task_id
-            const updatedTasks = tasksToAssign.map((task, index) => ({
-              ...task,
-              user_task_id: newUserTasks[index]?.id,
-              status: 'assigned'
-            }));
-            
-            setTasks(updatedTasks);
-          } else if (error) {
-            console.error("Error inserting tasks:", error);
+          if (taskError) {
+            console.error("Error creating tasks:", taskError);
             toast({
               variant: "destructive",
               title: "Failed to load tasks",
-              description: "There was an error loading your tasks. Please try again.",
+              description: "There was an error creating your tasks.",
             });
-          } else {
-            // Fallback if insertion fails
-            setTasks(tasksToAssign);
+            setIsLoading(false);
+            return;
+          }
+          
+          // Then create user_tasks records with the new task UUIDs
+          if (newTasks) {
+            const userTasksToInsert = newTasks.map(task => ({
+              user_id: session.user.id,
+              task_id: task.id,
+              status: 'assigned'
+            }));
+            
+            const { data: newUserTasks, error } = await supabase
+              .from('user_tasks')
+              .insert(userTasksToInsert)
+              .select();
+            
+            if (newUserTasks) {
+              // Update task display with user_task_id
+              const updatedTasks = newTasks.map((task, index) => ({
+                id: task.id,
+                title: task.title,
+                description: task.description,
+                category: task.category,
+                difficulty: task.difficulty,
+                points: task.points,
+                user_task_id: newUserTasks[index]?.id,
+                status: 'assigned'
+              }));
+              
+              setTasks(updatedTasks);
+            } else if (error) {
+              console.error("Error inserting tasks:", error);
+              toast({
+                variant: "destructive",
+                title: "Failed to load tasks",
+                description: "There was an error loading your tasks. Please try again.",
+              });
+            }
           }
         }
         
@@ -243,31 +271,62 @@ const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
       const currentTaskIds = tasks.map(t => t.id);
       const availableTasks = appropriateTasks.filter(t => !currentTaskIds.includes(t.id));
       
-      // Select a random new task
+      // Select a random new task and generate UUID for it
       if (availableTasks.length > 0) {
         const randomIndex = Math.floor(Math.random() * availableTasks.length);
-        const newTask = availableTasks[randomIndex];
+        const newTaskTemplate = availableTasks[randomIndex];
         
-        // Assign the new task to the user
-        const { data: newUserTask } = await supabase
-          .from('user_tasks')
+        // Create new task with UUID
+        const newTaskUuid = uuidv4();
+        const newTask = {
+          ...newTaskTemplate,
+          id: newTaskUuid
+        };
+        
+        // First create the task
+        const { data: createdTask, error: taskError } = await supabase
+          .from('tasks')
           .insert({
-            user_id: userId,
-            task_id: newTask.id,
-            status: 'assigned'
-          })
-          .select()
-          .single();
-        
-        if (newUserTask) {
-          // Add the new task to the list
-          setTasks([...tasks.filter(task => task.id !== taskId), {
             id: newTask.id,
             title: newTask.title,
             description: newTask.description,
             category: newTask.category,
             difficulty: newTask.difficulty,
-            points: newTask.points,
+            points: newTask.points
+          })
+          .select()
+          .single();
+          
+        if (taskError) {
+          console.error("Error creating replacement task:", taskError);
+          return;
+        }
+        
+        // Assign the new task to the user
+        const { data: newUserTask, error } = await supabase
+          .from('user_tasks')
+          .insert({
+            user_id: userId,
+            task_id: createdTask.id,
+            status: 'assigned'
+          })
+          .select()
+          .single();
+        
+        if (error) {
+          console.error("Error assigning replacement task:", error);
+          return;
+        }
+        
+        if (newUserTask) {
+          // Add the new task to the list
+          setTasks([...tasks.filter(task => task.id !== taskId), {
+            id: createdTask.id,
+            title: createdTask.title,
+            description: createdTask.description,
+            category: createdTask.category,
+            difficulty: createdTask.difficulty,
+            points: createdTask.points,
             user_task_id: newUserTask.id,
             status: 'assigned'
           }]);
