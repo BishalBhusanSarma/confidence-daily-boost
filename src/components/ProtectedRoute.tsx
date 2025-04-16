@@ -29,21 +29,28 @@ const ProtectedRoute = ({
       }
     };
     
-    // Set up auth state listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      setIsAuthenticated(!!session);
-      setIsCheckingAuth(false);
-    });
+    // First set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        // Using setTimeout to prevent possible circular invocations
+        setTimeout(() => {
+          setIsAuthenticated(!!session);
+          setIsCheckingAuth(false);
+        }, 0);
+      }
+    );
     
+    // Then check auth
     checkAuth();
     
-    // Add a timeout to prevent infinite loading
+    // Add a shorter timeout to prevent infinite loading
     const timeoutId = setTimeout(() => {
       if (isCheckingAuth) {
+        console.log("Auth check timeout reached");
         setIsCheckingAuth(false);
         setIsAuthenticated(false);
       }
-    }, 5000);
+    }, 3000); // Reduced from 5000ms to 3000ms
     
     return () => {
       subscription.unsubscribe();

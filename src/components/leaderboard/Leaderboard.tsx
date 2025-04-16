@@ -49,7 +49,7 @@ const Leaderboard = () => {
         const formattedData: LeaderboardUser[] = data.map((user) => ({
           id: user.id,
           full_name: user.full_name || `User ${user.id.substring(0, 4)}`,
-          points: user.points,
+          points: user.points || 0,
           isCurrentUser: user.id === currentUserId
         }));
         
@@ -72,7 +72,7 @@ const Leaderboard = () => {
             const userInfo = {
               id: userData.id,
               full_name: userData.full_name || `User ${userData.id.substring(0, 4)}`,
-              points: userData.points,
+              points: userData.points || 0,
               isCurrentUser: true
             };
             setCurrentUser(userInfo);
@@ -81,7 +81,7 @@ const Leaderboard = () => {
             const { count, error: countError } = await supabase
               .from('profiles')
               .select('id', { count: 'exact', head: true })
-              .gt('points', userData.points);
+              .gt('points', userData.points || 0);
               
             if (!countError && count !== null) {
               setCurrentUserRank(count + 1);

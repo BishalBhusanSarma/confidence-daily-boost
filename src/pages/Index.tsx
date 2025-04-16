@@ -7,39 +7,11 @@ const Index = () => {
   const navigate = useNavigate();
   
   useEffect(() => {
-    const checkAuthAndNavigate = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (session) {
-          // User is authenticated, check onboarding status
-          const { data: profileData } = await supabase
-            .from('profiles')
-            .select('onboarding_completed')
-            .eq('id', session.user.id)
-            .single();
-          
-          if (profileData?.onboarding_completed) {
-            navigate("/dashboard");
-          } else {
-            navigate("/onboarding");
-          }
-        } else {
-          // User is not authenticated, navigate to auth page
-          navigate("/auth");
-        }
-      } catch (error) {
-        console.error("Error checking authentication status:", error);
-        // Navigate to auth page in case of error
-        navigate("/auth");
-      }
-    };
-    
     // Immediately navigate to auth page
     navigate("/auth");
     
-    // Check auth status in the background
-    checkAuthAndNavigate();
+    // No need to check auth status here as we'll do that in ProtectedRoute
+    // and the Auth page will handle redirection if the user is already logged in
   }, [navigate]);
   
   // Return null since we're immediately navigating
@@ -47,4 +19,3 @@ const Index = () => {
 };
 
 export default Index;
-

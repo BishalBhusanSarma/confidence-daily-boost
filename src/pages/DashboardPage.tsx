@@ -7,9 +7,10 @@ import PointsDisplay from "@/components/dashboard/PointsDisplay";
 import MotivationalTip from "@/components/dashboard/MotivationalTip";
 import { supabase } from "@/integrations/supabase/client";
 import NotificationService from "@/services/NotificationService";
-import { getTasksForUser, TaskData } from "@/data/tasksByProfession";
+import { getTasksForUser } from "@/data/tasksByProfession";
 import { Button } from "@/components/ui/button";
 import { Settings, Award } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 
 interface Task {
   id: string;
@@ -32,7 +33,9 @@ const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
   const [points, setPoints] = useState(0);
   const [streak, setStreak] = useState(0);
   const [userProfession, setUserProfession] = useState("other");
+  const [userId, setUserId] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { toast } = useToast();
   
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -40,9 +43,11 @@ const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
         const { data: { session } } = await supabase.auth.getSession();
         
         if (!session) {
-          navigate("/");
+          navigate("/auth");
           return;
         }
+        
+        setUserId(session.user.id);
         
         // Fetch user profile
         const { data: profileData } = await supabase
@@ -52,8 +57,8 @@ const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
           .single();
         
         if (profileData) {
-          setPoints(profileData.points);
-          setStreak(profileData.streak);
+          setPoints(profileData.points || 0);
+          setStreak(profileData.streak || 0);
           
           // Redirect to onboarding if not completed
           if (!profileData.onboarding_completed) {
@@ -125,7 +130,7 @@ const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
             status: 'assigned'
           }));
           
-          const { data: newUserTasks } = await supabase
+          const { data: newUserTasks, error } = await supabase
             .from('user_tasks')
             .insert(userTasksToInsert)
             .select();
@@ -139,6 +144,13 @@ const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
             }));
             
             setTasks(updatedTasks);
+          } else if (error) {
+            console.error("Error inserting tasks:", error);
+            toast({
+              variant: "destructive",
+              title: "Failed to load tasks",
+              description: "There was an error loading your tasks. Please try again.",
+            });
           } else {
             // Fallback if insertion fails
             setTasks(tasksToAssign);
@@ -153,16 +165,27 @@ const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
       } catch (error) {
         console.error("Error fetching dashboard data:", error);
         setIsLoading(false);
+        toast({
+          variant: "destructive",
+          title: "Error loading dashboard",
+          description: "Please try refreshing the page.",
+        });
       }
     };
     
     fetchDashboardData();
-  }, [navigate]);
+  }, [navigate, toast]);
   
   const handleTaskComplete = async (taskId: string, userTaskId: string, points: number) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
+      if (!userId) {
+        toast({
+          variant: "destructive",
+          title: "Authentication error",
+          description: "Please login again to complete tasks.",
+        });
+        return;
+      }
       
       // Update the task status
       await supabase
@@ -172,28 +195,37 @@ const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
           completed_at: new Date().toISOString(),
           points_earned: points
         })
-        .eq('id', userTaskId);
+        .eq('id', userTaskId)
+        .eq('user_id', userId); // Ensure we're only updating the current user's task
       
       // Update the user's points
       const { data: profileData } = await supabase
         .from('profiles')
-        .select('points')
-        .eq('id', session.user.id)
+        .select('points, streak')
+        .eq('id', userId)
         .single();
       
       if (profileData) {
-        const newPoints = profileData.points + points;
+        const currentPoints = profileData.points || 0;
+        const currentStreak = profileData.streak || 0;
+        const newPoints = currentPoints + points;
+        const newStreak = currentStreak + 1;
         
         await supabase
           .from('profiles')
           .update({
             points: newPoints,
-            streak: streak + 1
+            streak: newStreak
           })
-          .eq('id', session.user.id);
+          .eq('id', userId);
         
         setPoints(newPoints);
-        setStreak(streak + 1);
+        setStreak(newStreak);
+        
+        toast({
+          title: "Task completed!",
+          description: `You earned ${points} points. Your new total is ${newPoints}.`,
+        });
       }
       
       // Update the local task list
@@ -203,7 +235,7 @@ const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
       const { data: prefData } = await supabase
         .from('user_preferences')
         .select('occupation')
-        .eq('user_id', session.user.id)
+        .eq('user_id', userId)
         .single();
       
       // Get appropriate tasks based on profession
@@ -220,7 +252,7 @@ const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
         const { data: newUserTask } = await supabase
           .from('user_tasks')
           .insert({
-            user_id: session.user.id,
+            user_id: userId,
             task_id: newTask.id,
             status: 'assigned'
           })
@@ -243,6 +275,11 @@ const DashboardPage = ({ userName = "" }: DashboardPageProps) => {
       }
     } catch (error) {
       console.error("Error completing task:", error);
+      toast({
+        variant: "destructive",
+        title: "Error completing task",
+        description: "Please try again.",
+      });
     }
   };
   
