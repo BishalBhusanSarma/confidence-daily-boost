@@ -19,12 +19,20 @@ const ProtectedRoute = ({
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const { data } = await supabase.auth.getSession();
+        const { data, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error("Auth check error:", error);
+          setIsAuthenticated(false);
+          setIsCheckingAuth(false);
+          return;
+        }
+        
         setIsAuthenticated(!!data.session);
+        setIsCheckingAuth(false);
       } catch (error) {
         console.error("Auth check error:", error);
         setIsAuthenticated(false);
-      } finally {
         setIsCheckingAuth(false);
       }
     };
@@ -56,7 +64,7 @@ const ProtectedRoute = ({
     };
   }, []);
   
-  // Show loading while checking authentication, but limit to 1 second max
+  // Show loading while checking authentication, but limit to a few seconds max
   if (isCheckingAuth) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-confidence-50 to-white">
